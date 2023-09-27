@@ -1,19 +1,21 @@
 package pkg
 
 import (
-	"context"
 	"flag"
-	"fmt"
 	"path/filepath"
 	"time"
 
 	api "github.com/Yu-Jack/wrangler-test/apis/jack.jack.operator.test/v1alpha1"
-	jack "github.com/Yu-Jack/wrangler-test/generated/controllers/jack.jack.operator.test"
+	jackselfapi "github.com/Yu-Jack/wrangler-test/apis/jackself/v1beta1"
 	controllergen "github.com/rancher/wrangler/pkg/controller-gen"
 	"github.com/rancher/wrangler/pkg/controller-gen/args"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
+
+type Register interface {
+	Setup()
+}
 
 func Setup() {
 	setupTypes()
@@ -32,22 +34,15 @@ func Setup() {
 		panic(err.Error())
 	}
 
-	_ = restConfig
-
-	mgmt, err := jack.NewFactoryFromConfig(restConfig)
-	if err != nil {
-		panic(err)
+	registers := []Register{
+		NewJackFactory(restConfig),
+		NewJackSelfFactory(restConfig),
 	}
 
-	cronJob := mgmt.Jack().V1alpha1().CronJob()
+	for _, r := range registers {
+		r.Setup()
+	}
 
-	cronJob.OnChange(context.Background(), "jack-cronjob-change", func(id string, obj *api.CronJob) (*api.CronJob, error) {
-		fmt.Println("obj.Spec.Foo: ", obj.Spec.Foo)
-		obj.Spec.Foo = "fixed!!!!"
-		return cronJob.Update(obj)
-	})
-
-	mgmt.Start(context.Background(), 50)
 	time.Sleep(100 * time.Second)
 }
 
@@ -60,6 +55,13 @@ func setupTypes() {
 				PackageName: "jack.jack.operator.test",
 				Types: []interface{}{
 					api.CronJob{},
+				},
+				GenerateTypes: true,
+			},
+			"jackself.testing": {
+				PackageName: "jackself.testing",
+				Types: []interface{}{
+					jackselfapi.CronJob{},
 				},
 				GenerateTypes: true,
 			},
