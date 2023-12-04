@@ -10,29 +10,30 @@ import (
 )
 
 type jackSelfFactory struct {
-	mgmt *jackself.Factory
+	jsFactory *jackself.Factory
 }
 
 func NewJackSelfFactory(restConfig *rest.Config) Register {
-	factory, err := jackself.NewFactoryFromConfig(restConfig)
+	jsFactory, err := jackself.NewFactoryFromConfig(restConfig)
 
 	if err != nil {
 		panic(err)
 	}
 
 	return &jackSelfFactory{
-		mgmt: factory,
+		jsFactory: jsFactory,
 	}
 }
 
 func (j *jackSelfFactory) Setup() {
-	cronJob := j.mgmt.Jackself().V1beta1().CronJob()
+	cronJob := j.jsFactory.Jackself().V1beta1().CronJob()
 	cronJob.OnChange(context.Background(), "jackself-cronjob-change", func(id string, obj *jackselfapi.CronJob) (*jackselfapi.CronJob, error) {
 		fmt.Println("jackself-obj.Spec.Foo: ", obj.Spec.Foo)
 		obj.Spec.Foo = "fixed--jack-self!!!!"
 		return cronJob.Update(obj)
 	})
-	if err := j.mgmt.Start(context.Background(), 50); err != nil {
+
+	if err := j.jsFactory.Start(context.Background(), 50); err != nil {
 		panic(err)
 	}
 }
