@@ -3,7 +3,7 @@ package pkg
 import (
 	"context"
 	"fmt"
-	"reflect"
+	"log"
 	"sync"
 	"time"
 
@@ -25,14 +25,9 @@ type jackFactory struct {
 	coreFactory *corev1.Factory
 	recorder    record.EventRecorder
 
-	watchedEvents    map[string]struct{}
-	oldWatchedEvents map[string]struct{}
-	watchedEventMux  sync.Mutex
-	watchedEvent     chan *k8sv1.Event
-	watcherCtx       context.Context
-	watcherCancel    context.CancelFunc
-	watcherWG        sync.WaitGroup
-	watcherCounter   int
+	watchedEvents   map[string]string
+	watchedEventMux sync.RWMutex
+	watchedEvent    chan *k8sv1.Event
 }
 
 func NewJackFactory(restConfig *rest.Config) Register {
@@ -57,106 +52,109 @@ func NewJackFactory(restConfig *rest.Config) Register {
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, k8sv1.EventSource{})
 
 	jf := &jackFactory{
-		jFactory:         jFactory,
-		coreFactory:      coreFactory,
-		recorder:         recorder,
-		watchedEvents:    make(map[string]struct{}),
-		oldWatchedEvents: make(map[string]struct{}),
-		watchedEventMux:  sync.Mutex{},
-		watchedEvent:     make(chan *k8sv1.Event),
-		watcherWG:        sync.WaitGroup{},
+		jFactory:        jFactory,
+		coreFactory:     coreFactory,
+		recorder:        recorder,
+		watchedEvents:   make(map[string]string),
+		watchedEventMux: sync.RWMutex{},
+		watchedEvent:    make(chan *k8sv1.Event),
 	}
 
-	jf.watcherCtx, jf.watcherCancel = context.WithCancel(context.Background())
-
-	go jf.WatchEvent()
+	go jf.WatchEvent(context.Background())
 
 	return jf
 }
 
-func (j *jackFactory) appendWatchedEvents(name string) {
-	j.watchedEventMux.Lock()
-	j.watchedEvents[name] = struct{}{}
-	j.fanInEvents()
-	j.watchedEventMux.Unlock()
+func (j *jackFactory) appendWatchedEvents(name, namespace string) {
+	exists := func() bool {
+		j.watchedEventMux.RLock()
+		defer j.watchedEventMux.RUnlock()
+		_, ok := j.watchedEvents[name]
+		return ok
+	}()
 
-	j.oldWatchedEvents = j.watchedEvents
-}
-
-func (j *jackFactory) deleteWatchedEvents(name string) {
-	j.watchedEventMux.Lock()
-	delete(j.watchedEvents, name)
-	j.fanInEvents()
-	j.watchedEventMux.Unlock()
-
-	j.oldWatchedEvents = j.watchedEvents
-}
-
-func (j *jackFactory) fanInEvents() {
-	if reflect.DeepEqual(j.oldWatchedEvents, j.watchedEvents) {
+	if exists {
 		return
 	}
 
-	j.watcherCancel()
-	j.watcherWG.Wait()
-
-	j.watcherCtx, j.watcherCancel = context.WithCancel(context.Background())
-	j.watcherWG = sync.WaitGroup{}
-
-	go func() {
-		for event, _ := range j.watchedEvents {
-			watcher, err := j.coreFactory.Core().V1().Event().Watch("jack-operator-test-system", metav1.ListOptions{
-				FieldSelector: fmt.Sprintf("involvedObject.name=%s", event),
-			})
-
-			if err != nil {
-				panic(err)
-			}
-
-			select {
-			case <-j.watcherCtx.Done():
-				watcher.Stop()
-				return
-			default:
-			}
-
-			j.watcherWG.Add(1)
-			j.watcherCounter++
-
-			fmt.Println("Start watcher: ", j.watcherCounter)
-
-			go func() {
-				defer j.watcherWG.Done()
-				defer watcher.Stop()
-
-				for {
-					select {
-					case <-time.After(3 * time.Second):
-						// timeout case
-						return
-					case <-j.watcherCtx.Done():
-						// cancel case
-						return
-					case result, ok := <-watcher.ResultChan():
-						if !ok {
-							return
-						}
-						e := result.Object.(*k8sv1.Event)
-						j.watchedEvent <- e
-					}
-				}
-			}()
-		}
-
-		j.watcherWG.Wait()
-	}()
+	j.watchedEventMux.Lock()
+	j.watchedEvents[name] = namespace
+	j.watchedEventMux.Unlock()
 }
 
-func (j *jackFactory) WatchEvent() {
-	for event := range j.watchedEvent {
-		fmt.Println("---Start to print event---")
-		fmt.Println(event.Source, event.Type, event.Name, event.Reason, event.Message)
-		fmt.Println("---End to print event---")
+func (j *jackFactory) deleteWatchedEvents(name string) {
+	notExists := func() bool {
+		j.watchedEventMux.RLock()
+		defer j.watchedEventMux.RUnlock()
+		_, ok := j.watchedEvents[name]
+		return !ok
+	}()
+
+	if notExists {
+		return
+	}
+
+	j.watchedEventMux.Lock()
+	delete(j.watchedEvents, name)
+	j.watchedEventMux.Unlock()
+}
+
+func (j *jackFactory) syncEvents() {
+	j.watchedEventMux.RLock()
+	defer j.watchedEventMux.RUnlock()
+
+	time.Sleep(3 * time.Second) // simulate more time consuming
+
+	if len(j.watchedEvents) == 0 {
+		log.Println("no event to sync")
+		return
+	}
+
+	for resourceName, namespace := range j.watchedEvents {
+		eventList, err := j.coreFactory.Core().V1().Event().List(namespace, metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("involvedObject.name=%s", resourceName),
+		})
+
+		if err != nil {
+			panic(err)
+		}
+
+		log.Println("---Start to print event---")
+		var events []string
+		for _, event := range eventList.Items {
+			events = append(events, fmt.Sprintf("%s %s %s %s %s", event.Source, event.Type, event.Name, event.Reason, event.Message))
+		}
+
+		cronJob, err := j.jFactory.Jack().V1alpha1().CronJob().Get(namespace, resourceName, metav1.GetOptions{})
+		if err != nil {
+			panic(err)
+		}
+		cronJobDp := cronJob.DeepCopy()
+		if cronJobDp.Annotations["events"] == fmt.Sprintf("%s", events) {
+			log.Println("events is equal, skip it")
+			continue
+		}
+
+		cronJob.Annotations["events"] = fmt.Sprintf("%s", events)
+
+		if _, err = j.jFactory.Jack().V1alpha1().CronJob().Update(cronJob); err != nil {
+			panic(err)
+		}
+		log.Println("---End to print event---")
+	}
+}
+
+func (j *jackFactory) WatchEvent(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Println("start to sync events")
+			j.syncEvents()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -167,9 +165,9 @@ func (j *jackFactory) Setup() {
 			return nil, nil
 		}
 
-		fmt.Println("jack-obj.Spec.Foo: ", obj.Spec.Foo)
+		log.Println("jack-obj.Spec.Foo: ", obj.Spec.Foo)
 		j.recorder.Event(obj, "Normal", "CronJob", obj.Spec.Foo)
-		j.appendWatchedEvents(obj.Name)
+		j.appendWatchedEvents(obj.Name, obj.Namespace)
 
 		return obj, nil
 	})

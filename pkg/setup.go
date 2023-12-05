@@ -44,7 +44,7 @@ func Setup() {
 		r.Setup()
 	}
 
-	time.Sleep(100 * time.Second)
+	time.Sleep(100 * time.Minute)
 }
 
 func setupTypes() {
