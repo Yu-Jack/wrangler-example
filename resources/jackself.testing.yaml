@@ -1,8 +1,0 @@
-apiVersion: jackself.testing/v1beta1
-kind: CronJob
-metadata:
-  name: test-cronjob-01
-  namespace: jack-operator-test-system
-spec:
-  foo: "this is cron job"
-  jobName: "jack-self-job-name~~~"

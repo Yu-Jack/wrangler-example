@@ -1,0 +1,8 @@
+apiVersion: example.group.b/v1beta1
+kind: CronJob
+metadata:
+  name: test-cronjob-01
+  namespace: default
+spec:
+  foo: "this is cron job"
+  jobName: "jack-self-job-name~~~"

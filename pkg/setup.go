@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
-	api "github.com/Yu-Jack/wrangler-test/apis/jack.jack.operator.test/v1alpha1"
-	jackselfapi "github.com/Yu-Jack/wrangler-test/apis/jackself/v1beta1"
+	api "github.com/Yu-Jack/wrangler-test/apis/example.group.a/v1alpha1"
+	jackselfapi "github.com/Yu-Jack/wrangler-test/apis/example.group.b/v1beta1"
 	controllergen "github.com/rancher/wrangler/pkg/controller-gen"
 	"github.com/rancher/wrangler/pkg/controller-gen/args"
 	corev1 "k8s.io/api/core/v1"
@@ -36,8 +36,8 @@ func Setup() {
 	}
 
 	registers := []Register{
-		NewJackFactory(restConfig),
-		NewJackSelfFactory(restConfig),
+		NewExampleGroupAFactory(restConfig),
+		NewExampleGroupBFactory(restConfig),
 	}
 
 	for _, r := range registers {
@@ -52,19 +52,21 @@ func setupTypes() {
 		OutputPackage: "github.com/Yu-Jack/wrangler-test/generated",
 		Boilerplate:   "scripts/boilerplate.txt",
 		Groups: map[string]args.Group{
-			"jack.jack.operator.test": {
-				PackageName: "jack.jack.operator.test",
+			"example.group.a": {
+				PackageName: "example.group.a",
 				Types: []interface{}{
 					api.CronJob{},
 				},
-				GenerateTypes: true,
+				GenerateTypes:   true,
+				GenerateClients: true,
 			},
-			"jackself.testing": {
-				PackageName: "jackself.testing",
+			"example.group.b": {
+				PackageName: "example.group.b",
 				Types: []interface{}{
 					jackselfapi.CronJob{},
 				},
-				GenerateTypes: true,
+				GenerateTypes:   true,
+				GenerateClients: true,
 			},
 			corev1.GroupName: {
 				Types: []interface{}{

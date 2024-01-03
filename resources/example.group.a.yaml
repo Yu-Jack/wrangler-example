@@ -1,0 +1,15 @@
+apiVersion: example.group.a/v1alpha1
+kind: CronJob
+metadata:
+  name: test-cronjob-01
+  namespace: default
+spec:
+  foo: "this is cron job-22"
+---
+apiVersion: example.group.a/v1alpha1
+kind: CronJob
+metadata:
+  name: test-cronjob-02
+  namespace: default
+spec:
+  foo: "this is cron job-222"
