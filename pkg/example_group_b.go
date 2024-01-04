@@ -10,6 +10,8 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+const fixedFoo = "fixed--jack-self!!!!"
+
 type exampleGroupBFactory struct {
 	egbFactory        *egb.Factory
 	cronJobClient     v1beta1.CronJobClient
@@ -18,22 +20,24 @@ type exampleGroupBFactory struct {
 
 func NewExampleGroupBFactory(restConfig *rest.Config) Register {
 	egbFactory, err := egb.NewFactoryFromConfig(restConfig)
-	cronJobClient := egbFactory.Example().V1beta1().CronJob()
+	cronJobs := egbFactory.Example().V1beta1().CronJob()
 
 	if err != nil {
 		panic(err)
 	}
 
-	return &exampleGroupBFactory{
+	egbf := &exampleGroupBFactory{
 		egbFactory:        egbFactory,
-		cronJobClient:     cronJobClient,
-		cronJobController: cronJobClient,
+		cronJobClient:     cronJobs,
+		cronJobController: cronJobs,
 	}
+
+	cronJobs.OnChange(context.TODO(), "example.group.b-cronjob-change", egbf.OnChange)
+
+	return egbf
 }
 
 func (egbf *exampleGroupBFactory) Setup() {
-	egbf.cronJobController.OnChange(context.Background(), "example.group.b-cronjob-change", egbf.OnChange)
-
 	if err := egbf.egbFactory.Start(context.Background(), 50); err != nil {
 		panic(err)
 	}
@@ -41,6 +45,6 @@ func (egbf *exampleGroupBFactory) Setup() {
 
 func (egbf *exampleGroupBFactory) OnChange(id string, obj *egbApi.CronJob) (*egbApi.CronJob, error) {
 	fmt.Println("example.group.b-obj.Spec.Foo: ", obj.Spec.Foo)
-	obj.Spec.Foo = "fixed--jack-self!!!!"
+	obj.Spec.Foo = fixedFoo
 	return egbf.cronJobClient.Update(obj)
 }

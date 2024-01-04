@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	api "github.com/Yu-Jack/wrangler-test/apis/example.group.a/v1alpha1"
-	corev1 "github.com/Yu-Jack/wrangler-test/generated/controllers/core"
 	ega "github.com/Yu-Jack/wrangler-test/generated/controllers/example.group.a"
 	v1alpha1 "github.com/Yu-Jack/wrangler-test/generated/controllers/example.group.a/v1alpha1"
 	"github.com/rancher/wrangler/pkg/leader"
@@ -21,7 +20,6 @@ import (
 
 type exampleGroupAFactory struct {
 	egaFactory        *ega.Factory
-	coreFactory       *corev1.Factory
 	recorder          record.EventRecorder
 	clientSet         *kubernetes.Clientset
 	cronJobClient     v1alpha1.CronJobClient
@@ -30,11 +28,6 @@ type exampleGroupAFactory struct {
 
 func NewExampleGroupAFactory(restConfig *rest.Config) Register {
 	egaFactory, err := ega.NewFactoryFromConfig(restConfig)
-	if err != nil {
-		panic(err)
-	}
-
-	coreFactory, err := corev1.NewFactoryFromConfig(restConfig)
 	if err != nil {
 		panic(err)
 	}
@@ -49,22 +42,21 @@ func NewExampleGroupAFactory(restConfig *rest.Config) Register {
 	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: clientSet.CoreV1().Events("example-group-a-operator-test-system")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, k8sv1.EventSource{})
 
-	cronJobClient := egaFactory.Example().V1alpha1().CronJob()
+	cronJobs := egaFactory.Example().V1alpha1().CronJob()
 
-	jf := &exampleGroupAFactory{
+	egaf := &exampleGroupAFactory{
 		egaFactory:        egaFactory,
-		coreFactory:       coreFactory,
 		recorder:          recorder,
 		clientSet:         clientSet,
-		cronJobClient:     cronJobClient,
-		cronJobController: cronJobClient,
+		cronJobClient:     cronJobs,
+		cronJobController: cronJobs,
 	}
 
-	return jf
+	cronJobs.OnChange(context.Background(), "example-group-a-cronjob-change", egaf.OnChange)
+
+	return egaf
 }
 func (egaf *exampleGroupAFactory) Setup() {
-	egaf.cronJobController.OnChange(context.Background(), "example-group-a-cronjob-change", egaf.OnChange)
-
 	leader.RunOrDie(context.Background(), "", "example-a-controller", egaf.clientSet, func(cb context.Context) {
 		if err := egaf.egaFactory.Start(context.Background(), 50); err != nil {
 			panic(err)

@@ -11,4 +11,4 @@ Run `make all`.
 
 Like distributed lock, usually we hope there is one controller to monitor the resource to avoid data race or race condition. So, we could make use of wrangler `leader.RunOrDie` which uses kubernetes lease to achieve the distributed lock.
 
-More example [here](./pkg/example_group_a.go#L68)
+More example [here](./pkg/example_group_a.go#L60)
