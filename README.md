@@ -12,3 +12,10 @@ Run `make all`.
 Like distributed lock, usually we hope there is one controller to monitor the resource to avoid data race or race condition. So, we could make use of wrangler `leader.RunOrDie` which uses kubernetes lease to achieve the distributed lock.
 
 More example [here](./pkg/example_group_a.go#L60)
+
+
+## Unit test
+
+You could use fake client to do unit test without building a kubernetes environment. But, remember to use custom resource fake client if would like to test custom resource controller behavior.
+
+More example [here](./pkg/example_group_b_test.go)
